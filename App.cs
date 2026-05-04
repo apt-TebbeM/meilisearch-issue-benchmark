@@ -1,17 +1,29 @@
-﻿// See https://aka.ms/new-console-template for more information
+﻿
+#:package Meilisearch@0.18.0
+#:package Bogus@35.6.5
+#:property PublishAot=false
 
 using Bogus;
 using Meilisearch;
-using Meilisearch.Benchmark;
 
 var meiliSearchUrlOne = "http://localhost:7701";
 var meiliSearchUrlSusSlow = "http://localhost:7702";
 var meilisearchMasterKey = "masterKey";
 var documentCount = 100_000;
-var createDocument = false;
+var createDocument = args.Length != 0 && args[0] == "createDocuments";
+var indexCount = 2;
 
-var firstIndex = new TestIndex(meiliSearchUrlOne, meilisearchMasterKey, "version_1_41_0", createDocument, 2);
-var slowIndex = new TestIndex(meiliSearchUrlSusSlow, meilisearchMasterKey, "version_1_42_1", createDocument, 2);
+if(args.Length == 0)
+{
+    Console.WriteLine("No arguments provided, defaulting to running benchmarks without creating documents. To create documents, provide any argument.");
+}
+else
+{
+    Console.WriteLine($"Args {args.Select(x => x).Aggregate((a, b) => $"{a} {b}")}");
+}
+
+var firstIndex = new TestIndex(meiliSearchUrlOne, meilisearchMasterKey, "version_1_41_0", createDocument, indexCount);
+var slowIndex = new TestIndex(meiliSearchUrlSusSlow, meilisearchMasterKey, "version_1_42_1", createDocument, indexCount);
 
 await firstIndex.CreateIndexAsync();
 await firstIndex.FillIndex(documentCount);
@@ -26,7 +38,7 @@ var testIndexes = new List<TestIndex>()
 
 foreach (var testIndex in testIndexes)
 {
-    Console.WriteLine(testIndex.Name);
+    Console.WriteLine($"Benchmarking {testIndex.Name}");
     await testIndex.GetArticlesFromAsync(1, 100);
     await testIndex.GetArticlesFromAsync(1, 100);
     await testIndex.GetArticlesFromAsync(100, 100);
@@ -114,7 +126,11 @@ public class TestIndex
     public async Task FillIndex(int documentCount)
     {
         if (!_createDocuments)
+        {
+            Console.WriteLine($"Skipping document creation for {_indexName} as createDocuments is set to false");
             return;
+        }
+
         for (int indexCount = 0; indexCount < _indexCount; indexCount++)
         {
             var indexName = $"{_indexName}_{indexCount}";
@@ -173,5 +189,25 @@ public class TestIndex
             Console.WriteLine(
                 $"{_indexName} filterCount: {articleNumbers.Count} \"ProcessingTimeMs: {result.ProcessingTimeMs}ms\"");
         }
+    }
+}
+
+
+public static class MeilisearchClientExtensions
+{
+    public static async Task<TaskResource> EnsureTaskIsDoneAsync(this MeilisearchClient client, TaskInfo result,
+        CancellationToken cancellationToken = default)
+    {
+        bool isTaskDone = false;
+        TaskResource? taskResource;
+        do
+        {
+            taskResource = await client.GetTaskAsync(result.TaskUid, cancellationToken);
+            isTaskDone = taskResource.Status == TaskInfoStatus.Failed ||
+                         taskResource.Status == TaskInfoStatus.Succeeded;
+            await Task.Delay(50, cancellationToken);
+        } while (!isTaskDone || cancellationToken.IsCancellationRequested);
+
+        return taskResource;
     }
 }
