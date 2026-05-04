@@ -13,7 +13,7 @@ var documentCount = 100_000;
 var createDocument = args.Length != 0 && args[0] == "createDocuments";
 var indexCount = 2;
 
-if(args.Length == 0)
+if (args.Length == 0)
 {
     Console.WriteLine("No arguments provided, defaulting to running benchmarks without creating documents. To create documents, provide any argument.");
 }
