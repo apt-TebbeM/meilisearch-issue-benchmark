@@ -8,7 +8,8 @@ using Meilisearch;
 using System.Diagnostics;
 
 var meiliSearchUrlOne = "http://localhost:7701";
-var meiliSearchUrlSusSlow = "http://localhost:7702";
+var meiliSearchUrlTwo = "http://localhost:7702";
+var meiliSearchUrlThree = "http://localhost:7703";
 var meilisearchMasterKey = "masterKey";
 var documentCount = 100_000;
 var createDocument = args.Length != 0 && args[0] == "createDocuments";
@@ -24,18 +25,20 @@ else
 }
 
 var firstIndex = new TestIndex(meiliSearchUrlOne, meilisearchMasterKey, "version_1_41_0", createDocument, indexCount);
-var slowIndex = new TestIndex(meiliSearchUrlSusSlow, meilisearchMasterKey, "version_1_42_1", createDocument, indexCount);
+var slowIndex = new TestIndex(meiliSearchUrlTwo, meilisearchMasterKey, "version_1_42_1", createDocument, indexCount);
+var threeIndex = new TestIndex(meiliSearchUrlThree, meilisearchMasterKey, "version_1_43_0", createDocument, indexCount);
 
-await firstIndex.CreateIndexAsync();
-await firstIndex.FillIndex(documentCount);
-
-await slowIndex.CreateIndexAsync();
-await slowIndex.FillIndex(documentCount);
 
 var testIndexes = new List<TestIndex>()
 {
-    firstIndex, slowIndex
+    firstIndex, slowIndex, threeIndex
 };
+
+foreach (var indexToSetup in testIndexes)
+{
+    await indexToSetup.CreateIndexAsync();
+    await indexToSetup.FillIndex(documentCount);
+}
 
 foreach (var testIndex in testIndexes)
 {
@@ -43,19 +46,19 @@ foreach (var testIndex in testIndexes)
 
     var benchmarkCases = new List<(int Start, int Count, int Repetitions)>
     {
-        (1, 100, 2),
-        (100, 100, 2),
-        (200, 100, 2),
-        (1, 200, 2),
-        (200, 200, 2),
-        (400, 200, 2),
-        (1, 1_000, 2),
-        (1_000, 1_000, 2),
-        (2_000, 1_000, 2),
-        (1, 5_000, 2),
-        (5_000, 5_000, 2),
-        (10_000, 5_000, 2),
-        (1, 10_000, 7)
+        (1, 100, 7),
+        (100, 100, 7),
+        (200, 100, 7),
+        (1, 200, 7),
+        (200, 200, 7),
+        (400, 200, 7),
+        (1, 1_000, 7),
+        (1_000, 1_000, 7),
+        (2_000, 1_000, 7),
+        (1, 5_000, 7),
+        (5_000, 5_000, 7),
+        (10_000, 5_000, 7),
+        (1, 10_000, 21)
     };
 
     foreach (var benchmarkCase in benchmarkCases)
@@ -73,9 +76,9 @@ BenchmarkSummaryPrinter.Print(testIndexes);
 public class TestArticle
 {
     public required string ArticleNumber { get; set; }
-    public string Description { get; set; }
-    public string Title { get; set; }
-    public List<string> Allergens { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public List<string> Allergens { get; set; } = [];
 }
 
 public class TestIndex
@@ -185,7 +188,7 @@ public class TestIndex
                 result.Hits.Count));
 
             Console.WriteLine(
-                $"{_indexName} filterCount: {articleNumbers.Count} \"ProcessingTimeMs: {result.ProcessingTimeMs}ms\" \"ElapsedMs: {stopwatch.ElapsedMilliseconds}ms\"");
+                $"{_indexName} filterCount: {articleNumbers.Count} \"ProcessingTimeMs: {result.ProcessingTimeMs}ms\" \"ElapsedMs: {stopwatch.ElapsedMilliseconds}ms\", item count {result.Hits.Count}");
         }
         else
         {
