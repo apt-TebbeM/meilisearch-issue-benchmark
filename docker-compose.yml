@@ -1,0 +1,26 @@
+services:
+  meilisearchOne:
+    image: getmeili/meilisearch:v1.41.0
+    ports:
+      - "7701:7700"
+    environment:
+      - MEILI_MASTER_KEY=masterKey
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - meiliOne:/data.ms
+    restart: unless-stopped
+      
+  meilisearchTwo:
+    image: getmeili/meilisearch:v1.42.1
+    ports:
+      - "7702:7700"
+    environment:
+      - MEILI_MASTER_KEY=masterKey
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - meiliTwo:/data.ms
+    restart: unless-stopped
+
+volumes:
+  meiliOne:
+  meiliTwo:
