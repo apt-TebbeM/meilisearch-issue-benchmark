@@ -5,6 +5,7 @@
 
 using Bogus;
 using Meilisearch;
+using System.Diagnostics;
 
 var meiliSearchUrlOne = "http://localhost:7701";
 var meiliSearchUrlSusSlow = "http://localhost:7702";
@@ -39,45 +40,34 @@ var testIndexes = new List<TestIndex>()
 foreach (var testIndex in testIndexes)
 {
     Console.WriteLine($"Benchmarking {testIndex.Name}");
-    await testIndex.GetArticlesFromAsync(1, 100);
-    await testIndex.GetArticlesFromAsync(1, 100);
-    await testIndex.GetArticlesFromAsync(100, 100);
-    await testIndex.GetArticlesFromAsync(100, 100);
-    await testIndex.GetArticlesFromAsync(200, 100);
-    await testIndex.GetArticlesFromAsync(200, 100);
 
-    await testIndex.GetArticlesFromAsync(1, 200);
-    await testIndex.GetArticlesFromAsync(1, 200);
-    await testIndex.GetArticlesFromAsync(200, 200);
-    await testIndex.GetArticlesFromAsync(200, 200);
-    await testIndex.GetArticlesFromAsync(400, 200);
-    await testIndex.GetArticlesFromAsync(400, 200);
+    var benchmarkCases = new List<(int Start, int Count, int Repetitions)>
+    {
+        (1, 100, 2),
+        (100, 100, 2),
+        (200, 100, 2),
+        (1, 200, 2),
+        (200, 200, 2),
+        (400, 200, 2),
+        (1, 1_000, 2),
+        (1_000, 1_000, 2),
+        (2_000, 1_000, 2),
+        (1, 5_000, 2),
+        (5_000, 5_000, 2),
+        (10_000, 5_000, 2),
+        (1, 10_000, 7)
+    };
 
-    await testIndex.GetArticlesFromAsync(1, 1_000);
-    await testIndex.GetArticlesFromAsync(1, 1_000);
-    await testIndex.GetArticlesFromAsync(1_000, 1_000);
-    await testIndex.GetArticlesFromAsync(1_000, 1_000);
-    await testIndex.GetArticlesFromAsync(2_000, 1_000);
-    await testIndex.GetArticlesFromAsync(2_000, 1_000);
-
-    await testIndex.GetArticlesFromAsync(1, 5_000);
-    await testIndex.GetArticlesFromAsync(1, 5_000);
-    await testIndex.GetArticlesFromAsync(5_000, 5_000);
-    await testIndex.GetArticlesFromAsync(5_000, 5_000);
-    await testIndex.GetArticlesFromAsync(10_000, 5_000);
-    await testIndex.GetArticlesFromAsync(10_000, 5_000);
-
-    await testIndex.GetArticlesFromAsync(1, 10_000);
-    await testIndex.GetArticlesFromAsync(1, 10_000);
-    await testIndex.GetArticlesFromAsync(1, 10_000);
-    await testIndex.GetArticlesFromAsync(1, 10_000);
-    await testIndex.GetArticlesFromAsync(1, 10_000);
-    await testIndex.GetArticlesFromAsync(1, 10_000);
-    await testIndex.GetArticlesFromAsync(1, 10_000);
+    foreach (var benchmarkCase in benchmarkCases)
+    {
+        for (var i = 0; i < benchmarkCase.Repetitions; i++)
+        {
+            await testIndex.GetArticlesFromAsync(benchmarkCase.Start, benchmarkCase.Count);
+        }
+    }
 }
 
-
-//Searching for all articles from 100-9999
+BenchmarkSummaryPrinter.Print(testIndexes);
 
 
 public class TestArticle
@@ -94,6 +84,7 @@ public class TestIndex
     private readonly string _indexName;
     private readonly bool _createDocuments;
     private readonly int _indexCount;
+    private readonly List<BenchmarkSample> _benchmarkSamples = [];
 
     public TestIndex(string meiliSearchUrl, string meilisearchMasterKey, string testIndexName, bool createDocument,
         int indexCount = 1)
@@ -105,6 +96,7 @@ public class TestIndex
     }
 
     public string Name => _indexName;
+    public IReadOnlyList<BenchmarkSample> BenchmarkSamples => _benchmarkSamples;
 
     public async Task CreateIndexAsync()
     {
@@ -182,13 +174,60 @@ public class TestIndex
             });
         }
 
+        var stopwatch = Stopwatch.StartNew();
+
         var iSearchResult = await _client.FederatedMultiSearchAsync<TestArticle>(federatedQuery);
+        stopwatch.Stop();
 
         if (iSearchResult is SearchResult<TestArticle> result && result.Hits.Count > 0)
         {
+            _benchmarkSamples.Add(new BenchmarkSample(start, count, result.ProcessingTimeMs, stopwatch.ElapsedMilliseconds,
+                result.Hits.Count));
+
             Console.WriteLine(
-                $"{_indexName} filterCount: {articleNumbers.Count} \"ProcessingTimeMs: {result.ProcessingTimeMs}ms\"");
+                $"{_indexName} filterCount: {articleNumbers.Count} \"ProcessingTimeMs: {result.ProcessingTimeMs}ms\" \"ElapsedMs: {stopwatch.ElapsedMilliseconds}ms\"");
         }
+        else
+        {
+            _benchmarkSamples.Add(new BenchmarkSample(start, count, 0, stopwatch.ElapsedMilliseconds, 0));
+        }
+    }
+}
+
+public record BenchmarkSample(int Start, int Count, long ProcessingTimeMs, long ElapsedMs, int HitCount);
+
+public static class BenchmarkSummaryPrinter
+{
+    public static void Print(IEnumerable<TestIndex> testIndexes)
+    {
+        Console.WriteLine();
+        Console.WriteLine("========== BENCHMARK SUMMARY ==========");
+
+        foreach (var testIndex in testIndexes)
+        {
+            var samples = testIndex.BenchmarkSamples.ToList();
+            if (samples.Count == 0)
+            {
+                Console.WriteLine($"{testIndex.Name}: no samples recorded.");
+                continue;
+            }
+
+            Console.WriteLine();
+            Console.WriteLine($"Version: {testIndex.Name}");
+            Console.WriteLine(
+                $"Runs: {samples.Count}, AvgProcessingMs: {samples.Average(x => x.ProcessingTimeMs):F2}, MinProcessingMs: {samples.Min(x => x.ProcessingTimeMs)}, MaxProcessingMs: {samples.Max(x => x.ProcessingTimeMs)}");
+            Console.WriteLine(
+                $"AvgElapsedMs: {samples.Average(x => x.ElapsedMs):F2}, MinElapsedMs: {samples.Min(x => x.ElapsedMs)}, MaxElapsedMs: {samples.Max(x => x.ElapsedMs)}");
+
+            Console.WriteLine("By filter size:");
+            foreach (var group in samples.GroupBy(x => x.Count).OrderBy(x => x.Key))
+            {
+                Console.WriteLine(
+                    $"  count={group.Key,6}: runs={group.Count(),2}, avgProc={group.Average(x => x.ProcessingTimeMs),8:F2}ms, avgElapsed={group.Average(x => x.ElapsedMs),8:F2}ms, maxProc={group.Max(x => x.ProcessingTimeMs),4}ms");
+            }
+        }
+
+        Console.WriteLine("=======================================");
     }
 }
 
