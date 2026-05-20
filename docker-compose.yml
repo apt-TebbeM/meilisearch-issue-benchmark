@@ -32,7 +32,19 @@ services:
       - meiliThree:/data.ms
     restart: unless-stopped
 
+  meilisearchNewest:
+    image: getmeili/meilisearch:v1.44.0
+    ports:
+      - "7704:7700"
+    environment:
+      - MEILI_MASTER_KEY=masterKey
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - meiliLatest:/data.ms
+    restart: unless-stopped
+
 volumes:
   meiliOne:
   meiliTwo:
   meiliThree:
+  meiliLatest:

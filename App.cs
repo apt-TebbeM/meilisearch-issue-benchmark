@@ -1,5 +1,4 @@
-﻿
-#:package Meilisearch@0.18.0
+﻿#:package Meilisearch@0.18.0
 #:package Bogus@35.6.5
 #:property PublishAot=false
 
@@ -7,9 +6,11 @@ using Bogus;
 using Meilisearch;
 using System.Diagnostics;
 
+
 var meiliSearchUrlOne = "http://localhost:7701";
 var meiliSearchUrlTwo = "http://localhost:7702";
 var meiliSearchUrlThree = "http://localhost:7703";
+var meiliSearchUrlLatest = "http://localhost:7704";
 var meilisearchMasterKey = "masterKey";
 var documentCount = 100_000;
 var createDocument = args.Length != 0 && args[0] == "createDocuments";
@@ -17,21 +18,24 @@ var indexCount = 2;
 
 if (args.Length == 0)
 {
-    Console.WriteLine("No arguments provided, defaulting to running benchmarks without creating documents. To create documents, provide any argument.");
+    Console.WriteLine(
+        "No arguments provided, defaulting to running benchmarks without creating documents. To create documents, provide any argument.");
 }
 else
 {
     Console.WriteLine($"Args {args.Select(x => x).Aggregate((a, b) => $"{a} {b}")}");
 }
 
+
 var firstIndex = new TestIndex(meiliSearchUrlOne, meilisearchMasterKey, "version_1_41_0", createDocument, indexCount);
 var slowIndex = new TestIndex(meiliSearchUrlTwo, meilisearchMasterKey, "version_1_42_1", createDocument, indexCount);
 var threeIndex = new TestIndex(meiliSearchUrlThree, meilisearchMasterKey, "version_1_43_0", createDocument, indexCount);
+var latestIndex = new TestIndex(meiliSearchUrlLatest, meilisearchMasterKey, "version_1_44_0", createDocument, indexCount);
 
 
 var testIndexes = new List<TestIndex>()
 {
-    firstIndex, slowIndex, threeIndex
+    firstIndex, slowIndex, threeIndex, latestIndex
 };
 
 foreach (var indexToSetup in testIndexes)
@@ -39,6 +43,36 @@ foreach (var indexToSetup in testIndexes)
     await indexToSetup.CreateIndexAsync();
     await indexToSetup.FillIndex(documentCount);
 }
+
+if (createDocument)
+{
+    Console.WriteLine("Waiting for document indexing");
+
+    var timeSpanToWaitFor = TimeSpan.FromMinutes(1);
+    var cSource = new CancellationTokenSource(timeSpanToWaitFor);
+    var cancellationToken = cSource.Token;
+    //display waiting dots
+    var dotAmount = 4;
+    var drawnDots = 0;
+    Console.CursorVisible = false;
+    while (!cancellationToken.IsCancellationRequested)
+    {
+        if (drawnDots == dotAmount)
+        {
+            Console.CursorLeft = 0;
+            Console.Write(new string(' ', dotAmount));
+            Console.CursorLeft = 0;
+            drawnDots = 0;
+        }
+
+        Console.Write(".");
+        await Task.Delay(150);
+        drawnDots++;
+    }
+
+    Console.CursorVisible = true;
+}
+
 
 foreach (var testIndex in testIndexes)
 {
@@ -184,7 +218,8 @@ public class TestIndex
 
         if (iSearchResult is SearchResult<TestArticle> result && result.Hits.Count > 0)
         {
-            _benchmarkSamples.Add(new BenchmarkSample(start, count, result.ProcessingTimeMs, stopwatch.ElapsedMilliseconds,
+            _benchmarkSamples.Add(new BenchmarkSample(start, count, result.ProcessingTimeMs,
+                stopwatch.ElapsedMilliseconds,
                 result.Hits.Count));
 
             Console.WriteLine(
